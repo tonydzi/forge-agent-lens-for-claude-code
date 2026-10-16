@@ -22,7 +22,7 @@ umask 077
 CONFIG_DIR="${HOME}/.forge-agent-lens-for-claude-code"
 SETTINGS_FILE="${CONFIG_DIR}/settings.json"
 ERROR_LOG="${CONFIG_DIR}/logs/hook-errors.log"
-SOCKET_PATH="${CONFIG_DIR}/daemon.sock"
+DEFAULT_SOCKET_PATH="${CONFIG_DIR}/daemon.sock"
 
 # Resolve the directory this script lives in so we can find hook-socket.mjs
 # (shipped alongside in the same hooks/ directory). The .mjs replaces the
@@ -66,6 +66,16 @@ WANDB_API_KEY_VALUE=$(grep -o '"wandb_api_key" *: *"[^"]*"' "${SETTINGS_FILE}" 2
 if [ -z "${WANDB_API_KEY_VALUE}" ] && [ -z "${WANDB_API_KEY:-}" ]; then
   exit 0
 fi
+
+# ── daemon socket ─────────────────────────────────────────────────────────────
+# The daemon binds settings.daemon_socket (`config set daemon_socket ...`), so
+# the hook must connect to the same path. The value is a JSON string, so decode
+# its escapes (a Windows pipe name is stored as "\\\\.\\pipe\\..."). Fall back
+# to the default path when the key is missing or null, as `uninstall` does.
+
+SOCKET_PATH=$(grep -oE '"daemon_socket" *: *"([^"\\]|\\.)*"' "${SETTINGS_FILE}" 2>/dev/null \
+  | sed -E 's/^"daemon_socket" *: *"//; s/"$//; s/\\(.)/\1/g')
+SOCKET_PATH="${SOCKET_PATH:-${DEFAULT_SOCKET_PATH}}"
 
 # ── start daemon if needed ────────────────────────────────────────────────────
 #

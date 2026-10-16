@@ -325,6 +325,29 @@ suite('hook-handler.sh', () => {
       killIfAlive(firstPid);
     }
   });
+
+  // `config set daemon_socket` moves the daemon to another path; the hook must
+  // follow it instead of probing the default daemon.sock. The backslash in the
+  // file name checks that JSON escapes in settings.json are decoded.
+  for (const name of ['custom.sock', 'custom\\name.sock']) {
+    test(`honors daemon_socket from settings.json (${name})`, async () => {
+      const w = newWorkspace('hook-custom');
+      w.socketPath = path.join(w.home, name);
+      const settingsFile = path.join(w.configDir, 'settings.json');
+      const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+      fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, daemon_socket: w.socketPath }, null, 2));
+      try {
+        const r = await runHook(w, '{"event":"SessionStart"}\n');
+        assert.equal(r.code, 0, `hook should exit 0 — stderr=${r.stderr}`);
+        await waitFor(() => fs.existsSync(w.requestLog) && fs.readFileSync(w.requestLog, 'utf8').includes('SessionStart'));
+        const errors = fs.existsSync(w.errorLog) ? fs.readFileSync(w.errorLog, 'utf8') : '';
+        assert.doesNotMatch(errors, /Daemon did not start/, 'hook must probe the configured socket');
+        assert.equal(fs.existsSync(path.join(w.configDir, 'daemon.sock')), false, 'default socket must stay unused');
+      } finally {
+        killIfAlive(readPid(w));
+      }
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
